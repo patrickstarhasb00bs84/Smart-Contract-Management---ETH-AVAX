@@ -5,26 +5,25 @@ pragma solidity ^0.8.9;
 
 contract Assessment {
     address payable public owner;
-    uint256 public balance;
+    uint256 public contractBalance;
 
     event Deposit(address from, uint256 amount);
     event Withdraw(address to, uint256 amount);
     event Transfer(address to, uint256 amount);
 
     constructor(uint initBalance) payable {
-        owner = payable(msg.sender);
+        owner = (msg.sender);
         contractBalance = initBalance;
     }
 
-    function getBalance() public view returns(uint256){
+    function getBalance() public view returns (uint256) {
         return address(this).balance;
     }
 
-    function deposit(uint256 _amount) public payable {
-
+    function deposit() public payable {
         require(msg.value > 0, "Deposit amount should be greater than 0");
         contractBalance += msg.value;
-        emit Depost(msg.sender, msg.value);
+        emit Deposit(msg.sender, msg.value);
     }
 
     function withdraw(uint256 _withdrawAmount) public {
