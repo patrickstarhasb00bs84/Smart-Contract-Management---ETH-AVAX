@@ -1,57 +1,77 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
-import styled from "styled-components";
 import atm_abi from "../artifacts/contracts/Assessment.sol/Assessment.json";
 
 export default function HomePage() {
   const [ethWallet, setEthWallet] = useState(undefined);
   const [account, setAccount] = useState(undefined);
   const [atm, setATM] = useState(undefined);
-  const [balance, setBalance] = useState('0');
-  const [depositAmount, setDepositAmount] = useState('');
-  const [withdrawAmount, setWithdrawAmount] = useState('');
-  const [transferAmount, setTransferAmount] = useState('');
+  const [balance, setBalance] = useState(undefined);
+  const [showAccount, setShowAccount] = useState(true);
+  const [transactionAmount, setTransactionAmount] = useState(1);
   const [recipientAddress, setRecipientAddress] = useState('');
-
+  
   const contractAddress = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
   const atmABI = atm_abi.abi;
+  const ethLogo = "https://www.pngall.com/wp-content/uploads/10/Ethereum-Logo-PNG-HD-Image.png"
+  
+  const handleRecipientChange = (e) => {
+    setRecipientAddress(e.target.value);
+  };
 
-  useEffect(() => {
-    const initWallet = async () => {
-      if (window.ethereum) {
-        setEthWallet(window.ethereum);
-        const accounts = await window.ethereum.request({ method: "eth_accounts" });
-        handleAccount(accounts);
-      }
-    };
-    initWallet();
-  }, []);
+  const handleAmountChange = (e) => {
+    if (e.target.value <0) {
+      setTransactionAmount(0);
+      return;
+    }
+    else if (e.target.value > balance) {
+      setTransactionAmount(balance);
+      return;
+    }
+    setTransactionAmount(parseFloat(e.target.value)); // Parse the input value as a float
+  };
+
+  // Validate the transaction amount against the available balance
+  const isValidTransactionAmount = () => {
+    return balance !== undefined && transactionAmount > 0 && transactionAmount <= balance;
+  };
+
+  const getWallet = async () => {
+    if (window.ethereum) {
+      setEthWallet(window.ethereum);
+    }
+
+    if (ethWallet) {
+      const account = await ethWallet.request({ method: "eth_accounts" });
+      handleAccount(account[0]); // we only care about the first account
+    }
+  };
 
   const handleAccount = (accounts) => {
-    if (accounts.length > 0) {
-      console.log("Account connected: ", accounts[0]);
-      setAccount(accounts[0]);
-      getATMContract();
+    if (accounts && accounts.length > 0) {
+      const selectedAccount = accounts[0];
+      console.log("Account connected: ", selectedAccount);
+      setAccount(selectedAccount);
     } else {
       console.log("No account found");
     }
   };
+  
 
   const connectAccount = async () => {
     if (!ethWallet) {
-      alert("MetaMask wallet is required to connect");
+      alert('MetaMask wallet is required to connect');
       return;
     }
-
-    const accounts = await ethWallet.request({ method: "eth_requestAccounts" });
+  
+    const accounts = await ethWallet.request({ method: 'eth_requestAccounts' });
     handleAccount(accounts);
+    
+    // once wallet is set we can get a reference to our deployed contract
+    getATMContract();
   };
 
   const getATMContract = () => {
-    if (!ethWallet) {
-      console.error("Ethereum wallet is not connected");
-      return;
-    }
     const provider = new ethers.providers.Web3Provider(ethWallet);
     const signer = provider.getSigner();
     const atmContract = new ethers.Contract(contractAddress, atmABI, signer);
@@ -59,143 +79,245 @@ export default function HomePage() {
     setATM(atmContract);
   };
 
+  const toggleAccount = () => {
+    setShowAccount(!showAccount);
+  };
+
   const getBalance = async () => {
     if (atm) {
-      const ContractBalance = await atm.getBalance();
-      setBalance(ethers.utils.formatEther(ContractBalance));
+      setBalance((await atm.getBalance()).toNumber());
     }
   };
 
   const deposit = async () => {
-    if (atm && parseFloat(depositAmount) > 0) {
-      try {
-        const depositAmountWei = ethers.utils.parseEther(depositAmount);
-        let tx = await atm.deposit({ value: depositAmountWei });
+    try {
+      if (atm && isValidTransactionAmount()) {
+        let tx = await atm.deposit(transactionAmount);
         await tx.wait();
         getBalance();
-        setDepositAmount('');
-      } catch (error) {
-        console.error("Deposit Error:", error);
+      } else {
+          console.log('Invalid transaction amount or insufficient balance');
+        }
+     } catch (error) {
+      if (error.code === 'ACTION_REJECTED') {
+        console.log('User rejected the deposit transaction.');
+      } else {
+        console.error('Unhandled error:', error);
       }
     }
   };
-
+  
   const withdraw = async () => {
-    if (atm && parseFloat(withdrawAmount) > 0) {
-      try {
-        const withdrawAmountWei = ethers.utils.parseEther(withdrawAmount);
-        let tx = await atm.withdraw(withdrawAmountWei);
+    try {
+      if (atm && isValidTransactionAmount()) {
+        let tx = await atm.withdraw(transactionAmount);
         await tx.wait();
         getBalance();
-        setWithdrawAmount('');
-      } catch (error) {
-        console.error("Withdrawal Error:", error);
+      } else {
+          console.log('Invalid transaction amount or insufficient balance');
+      }
+    } catch (error) {
+      if (error.code === 'ACTION_REJECTED') {
+        console.log('User rejected the withdraw transaction.');
+      } else {
+        console.error('Unhandled error:', error);
       }
     }
+  };
+  
+  const burn = async () => {
+    try {
+      if (atm && isValidTransactionAmount()) {
+        let tx = await atm.burn(transactionAmount);
+        await tx.wait();
+        getBalance();
+      } else {
+          console.log('Invalid transaction amount or insufficient balance');
+      }
+    } catch (error) {
+      if (error.code === 'ACTION_REJECTED') {
+        console.log('User rejected the burn transaction.');
+      } else {
+        console.error('Unhandled error:', error);
+      }
+    }
+  }; 
+
+
+  const inputStyle = {
+    padding: '8px',
+    margin: '10px',
+    borderRadius: '5px',
+    border: '1px solid #FFD700',
+    backgroundColor: '#0000',
+    color: '#fff',
+    fontSize: '16px',
+    outline: 'none',
+    maxWidth: '30px',
+    padding: '5px',
   };
 
-  const transfer = async () => {
-    if (atm && ethers.utils.isAddress(recipientAddress) && parseFloat(transferAmount) > 0) {
-      try {
-        const transferAmountWei = ethers.utils.parseEther(transferAmount);
-        const tx = await atm.transfer(recipientAddress, transferAmountWei);
-        await tx.wait();
-        getBalance();
-        setTransferAmount('');
-        setRecipientAddress('');
-      } catch (error) {
-        console.error("Transfer Error:", error);
-      }
-    }
+  const inputStyle2 = {
+    padding: '8px',
+    margin: '10px',
+    borderRadius: '5px',
+    border: '1px solid #FFD700',
+    backgroundColor: '#0000',
+    color: '#fff',
+    fontSize: '16px',
+    outline: 'none',
+    maxWidth: '50x',
+    width: '90px',
+    padding: '5px',
   };
+
+
+  // Styling with animations and background color
+  const containerStyle = {
+    textAlign: "center",
+    backgroundColor: "#10084F",
+    padding: "20px 10px 40px 10px",
+    borderRadius: "10px",
+    boxShadow: "0px 0px 10px rgba(0, 0, 0, 0.1)",
+    margin: "20px auto",
+    maxWidth: "500px",
+    animation: "fadeIn 1s ease-in-out",
+    font: "16px sans-serif",
+    transition: "background-color 0.3s ease-in-out",
+    color: "#ffffff",
+    borderRadius: "20px",
+    background: "linear-gradient(to right, #10090F, #1B116A)",
+  };
+  
+  const spanStyle = {
+    color: '#736b94',
+    fontSize: '22px',
+    fontWeight: 'bold',
+  };
+
+  const buttonStyle = {
+    backgroundColor: "transparent",
+    color: "#fff",
+    border: "none",
+    padding: "10px 20px",
+    borderRadius: "5px",
+    margin: "5px",
+    cursor: "pointer",
+    transition: "background-color 0.3s ease-in-out, transform 0.1s ease-in-out",
+    boxShadow: "0px 2px 4px rgba(0, 0, 0, 0.1)",
+    animation: "buttonFadeIn 0.5s ease-in-out",
+    backgroundImage: "linear-gradient(to right, #FFD700, #B8860B)", // Gold to Dark Gold gradient
+    borderRadius: "20px",
+    borderColor: "#FFD700",
+    fontWeight: "bold",
+    fontSize: "14px",
+    
+
+    // Hover effect to darken the gradient
+    "&:hover": {
+    backgroundImage: "linear-gradient(to right, #FFA500, #8B4513)", // Darken the gradient on hover
+  },
+  };
+
+  const initUser = () => {
+    if (!ethWallet) {
+      return <p>Please install Metamask in order to make transactions.</p>
+    }
+
+    if (!account) {
+      return <button style={buttonStyle} onClick={connectAccount}>Connect your Metamask wallet</button>;
+    }
+
+    if (balance === undefined) {
+      getBalance();
+    }
+    //When the wallet is connected, show the balance and buttons
+    return (
+      <div>
+        <p style={{fontSize : "20px"}}>Your Balance: <span style= {spanStyle}>{balance}</span> <img src={ethLogo} alt="Ethereum Logo" style={{ width: '13px', height: '19px' }} /></p>
+        <div>
+        <input
+          type="number"
+          value={transactionAmount}
+          onChange={handleAmountChange}
+          placeholder="Enter amount" // Placeholder text
+          style={inputStyle}
+        />
+        </div>
+        <div></div>
+        <button style={buttonStyle} onClick={deposit}>Deposit {transactionAmount} ETH</button>
+        <button style={buttonStyle} onClick={withdraw}>Withdraw {transactionAmount} ETH</button>
+        <button style={buttonStyle} onClick={burn}>Burn {transactionAmount} ETH</button>
+      </div>
+    );
+  };
+
+  useEffect(() => {
+    getWallet();
+  }, []);
 
   return (
-    <Container>
-      {!ethWallet ? (
-        <Message>Please install MetaMask to use this application.</Message>
-      ) : !account ? (
-        <Button onClick={connectAccount}>Connect your MetaMask wallet</Button>
-      ) : (
-        <WalletInfo>
-          <Header>Welcome, {account}</Header>
-          <Balance>Balance: {balance} ETH</Balance>
-          <InputSection>
-            <StyledInput type="text" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} placeholder="ETH to Deposit"/>
-            <Button onClick={deposit}>Deposit</Button>
-          </InputSection>
-          <InputSection>
-            <StyledInput type="text" value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)} placeholder="ETH to Withdraw"/>
-            <Button onClick={withdraw}>Withdraw</Button>
-          </InputSection>
-          <InputSection>
-            <StyledInput type="text" value={recipientAddress} onChange={e => setRecipientAddress(e.target.value)} placeholder="Recipient Address"/>
-            <StyledInput type="text" value={transferAmount} onChange={e => setTransferAmount(e.target.value)} placeholder="ETH to Transfer"/>
-            <Button onClick={transfer}>Transfer</Button>
-          </InputSection>
-        </WalletInfo>
-      )}
-    </Container>
+    <main style={containerStyle} className="container">
+      <header>
+        <h1 style={{ color: "#ffffff" }}>Welcome to ETH Manager!</h1>
+      </header>
+      <div>
+        {account && (
+          <>
+            {showAccount ? (
+              <p style={{fontSize : "20px"}}>Your Account: <span style={{color : "#cacaca"}}>{account}</span></p>
+            ) : (
+              <p style={{fontSize : "20px"}}>Your Account: ************</p>
+            )}
+            <button onClick={toggleAccount}>
+              {showAccount ? "🙉" : "🙈"}
+            </button>
+          </>
+        )}
+        {initUser()}
+      </div>
+      <style jsx>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+  
+        @keyframes buttonFadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+  
+        button {
+          background-color: transparent;
+          color: gold;
+          border: none;
+          padding: 10px;
+          margin: 5px;
+          cursor: pointer;
+          transition: transform 0.2s ease-in-out;
+          animation: buttonFadeIn 0.5s ease-in-out;
+          border-radius: 20px;
+        }
+  
+        button:hover {
+          background-color: #ffcd3c; /* Darken the color on hover */
+          transform: translateY(-2px);
+        }
+  
+        button:active {
+          transform: translateY(1px);
+        }
+      `}</style>
+    </main>
   );
 }
-
-const Container = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 20px;
-`;
-
-const Message = styled.p`
-  color: #444;
-  font-size: 1.2rem;
-`;
-
-const WalletInfo = styled.div`
-  background-color: #f0f0f0;
-  border-radius: 10px;
-  padding: 20px;
-  box-shadow: 0 2px 15px rgba(0,0,0,0.1);
-  width: 400px;
-  margin-top: 20px;
-`;
-
-const Header = styled.h1`
-  color: #333;
-  font-size: 1.5rem;
-  margin-bottom: 10px;
-`;
-
-const Balance = styled.h2`
-  color: #555;
-  margin-bottom: 20px;
-`;
-
-const Button = styled.button`
-  background-color: #4CAF50;
-  color: white;
-  border: none;
-  padding: 10px 20px;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 1rem;
-  margin-top: 10px;
-
-  &:hover {
-    background-color: #45a049;
-  }
-`;
-
-const StyledInput = styled.input`
-  padding: 8px;
-  margin-right: 10px;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  width: 200px;
-`;
-
-const InputSection = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-`;

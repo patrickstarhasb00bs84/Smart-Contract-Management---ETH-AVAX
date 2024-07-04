@@ -2,48 +2,53 @@
 pragma solidity ^0.8.9;
 
 contract Assessment {
-    address payable public owner;
-    uint256 public contractBalance;
+   address payable public owner;
+   uint256 public balance;
+   
+   event Deposit(uint256 amount);
+   event Withdraw(uint256 amount);
+   event Burn(uint256 amount);
 
-    event Deposit(address indexed from, uint256 amount);
-    event Withdraw(address indexed to, uint256 amount);
-    event Transfer(address indexed to, uint256 amount);
+   constructor(uint initBalance) payable {
+       owner = payable(msg.sender);
+       balance = initBalance;
+   }
 
-    constructor() payable {
-        owner = payable(msg.sender);
-        contractBalance = msg.value;
-    }
+   function getBalance() public view returns(uint256){
+       return balance;
+   }
 
-    function getBalance() public view returns (uint256) {
-        return contractBalance;
-    }
+   function deposit(uint256 _amount) public payable {
+       require(msg.sender == owner, "You are not the owner of this account");
 
-    function deposit() public payable {
-        require(msg.value > 0, "Deposit amount should be greater than 0");
-        contractBalance += msg.value;
-        emit Deposit(msg.sender, msg.value);
-    }
+       balance += _amount;
 
-    function withdraw(uint256 _withdrawAmount) public {
-        require(msg.sender == owner, "You are not the owner of this account");
-        require(_withdrawAmount > 0, "Withdrawal amount should be greater than 0");
-        require(contractBalance >= _withdrawAmount, "Insufficient Contract Balance");
+       emit Deposit(_amount);
+   }
 
-        (bool success, ) = payable(msg.sender).call{value: _withdrawAmount}("");
-        require(success, "Transfer failed");
-        contractBalance -= _withdrawAmount;
-        emit Withdraw(msg.sender, _withdrawAmount);
-    }
+   error InsufficientBalance(uint256 balance, uint256 withdrawAmount);
 
-    function transfer(address _to, uint256 _amount) public {
-        require(msg.sender == owner, "You are not the owner of this account");
-        require(_to != address(0), "Invalid recipient address");
-        require(_to != address(this), "Cannot transfer to the contract itself");
-        require(contractBalance >= _amount, "Insufficient Contract Balance");
+   function withdraw(uint256 _withdrawAmount) public {
+       require(msg.sender == owner, "You are not the owner of this account");
 
-        (bool success, ) = payable(_to).call{value: _amount}("");
-        require(success, "Transfer failed");
-        contractBalance -= _amount;
-        emit Transfer(_to, _amount);
-    }
+       if (balance < _withdrawAmount) {
+           revert InsufficientBalance({
+               balance: balance,
+               withdrawAmount: _withdrawAmount
+           });
+       }
+
+       balance -= _withdrawAmount;
+
+       emit Withdraw(_withdrawAmount);
+   }
+
+   function burn(uint256 _burnAmount) public {
+       require(msg.sender == owner, "You are not the owner of this account");
+       require(_burnAmount <= balance, "Insufficient balance");
+
+       balance -= _burnAmount;
+
+       emit Burn(_burnAmount);
+   }
 }
