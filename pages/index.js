@@ -7,315 +7,314 @@ export default function HomePage() {
   const [account, setAccount] = useState(undefined);
   const [atm, setATM] = useState(undefined);
   const [balance, setBalance] = useState(undefined);
-  const [showAccount, setShowAccount] = useState(true);
-  const [transactionAmount, setTransactionAmount] = useState(1);
-  const [recipientAddress, setRecipientAddress] = useState('');
-  
-  const contractAddress = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+  const [ownerError, setOwnerError] = useState(false);
+  const [ownershipStatus, setOwnershipStatus] = useState(false);
+  const [lockAmount, setLockAmount] = useState("");
+  const [depositAmount, setDepositAmount] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [newOwner, setNewOwner] = useState("");
+
+  const contractAddress = "0x5fbdb2315678afecb367f032d93f642f64180aa3";
   const atmABI = atm_abi.abi;
-  const ethLogo = "https://www.pngall.com/wp-content/uploads/10/Ethereum-Logo-PNG-HD-Image.png"
-  
-  const handleRecipientChange = (e) => {
-    setRecipientAddress(e.target.value);
-  };
 
-  const handleAmountChange = (e) => {
-    if (e.target.value <0) {
-      setTransactionAmount(0);
-      return;
-    }
-    else if (e.target.value > balance) {
-      setTransactionAmount(balance);
-      return;
-    }
-    setTransactionAmount(parseFloat(e.target.value)); // Parse the input value as a float
-  };
-
-  // Validate the transaction amount against the available balance
-  const isValidTransactionAmount = () => {
-    return balance !== undefined && transactionAmount > 0 && transactionAmount <= balance;
-  };
-
-  const getWallet = async () => {
+  useEffect(() => {
     if (window.ethereum) {
       setEthWallet(window.ethereum);
+      window.ethereum.on("accountsChanged", handleAccountsChanged);
+      getWallet();
+    } else {
+      console.log("Please install MetaMask!");
     }
+    return () => {
+      if (window.ethereum) {
+        window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
+      }
+    };
+  }, []);
 
+  useEffect(() => {
+    if (ethWallet && account) {
+      getATMContract();
+    }
+  }, [ethWallet, account]);
+
+  const getWallet = async () => {
     if (ethWallet) {
-      const account = await ethWallet.request({ method: "eth_accounts" });
-      handleAccount(account[0]); // we only care about the first account
+      try {
+        const accounts = await ethWallet.request({ method: "eth_accounts" });
+        handleAccount(accounts);
+      } catch (error) {
+        console.error("Error fetching accounts:", error);
+      }
     }
   };
 
   const handleAccount = (accounts) => {
     if (accounts && accounts.length > 0) {
-      const selectedAccount = accounts[0];
-      console.log("Account connected: ", selectedAccount);
-      setAccount(selectedAccount);
+      console.log("Account connected: ", accounts[0]);
+      setAccount(accounts[0]);
     } else {
       console.log("No account found");
     }
   };
-  
 
   const connectAccount = async () => {
     if (!ethWallet) {
-      alert('MetaMask wallet is required to connect');
+      alert("MetaMask wallet is required to connect");
       return;
     }
-  
-    const accounts = await ethWallet.request({ method: 'eth_requestAccounts' });
-    handleAccount(accounts);
-    
-    // once wallet is set we can get a reference to our deployed contract
-    getATMContract();
+
+    try {
+      const accounts = await ethWallet.request({ method: "eth_requestAccounts" });
+      handleAccount(accounts);
+    } catch (error) {
+      console.error("Error connecting account:", error);
+    }
   };
 
   const getATMContract = () => {
     const provider = new ethers.providers.Web3Provider(ethWallet);
     const signer = provider.getSigner();
     const atmContract = new ethers.Contract(contractAddress, atmABI, signer);
-
     setATM(atmContract);
-  };
-
-  const toggleAccount = () => {
-    setShowAccount(!showAccount);
   };
 
   const getBalance = async () => {
     if (atm) {
-      setBalance((await atm.getBalance()).toNumber());
+      try {
+        const balanceBigNumber = await atm.getBalance();
+        setBalance(ethers.utils.formatEther(balanceBigNumber));
+      } catch (error) {
+        console.error("Error fetching balance:", error);
+      }
+    }
+  };
+
+  const checkOwnership = async () => {
+    if (atm && account) {
+      try {
+        const isOwner = await atm.isOwner(account);
+        setOwnershipStatus(isOwner);
+      } catch (error) {
+        console.error("Error checking ownership:", error);
+      }
+    }
+  };
+
+  const transferOwnership = async () => {
+    if (atm && newOwner) {
+      try {
+        const tx = await atm.transferOwnership(newOwner);
+        await tx.wait();
+        alert(`Ownership transferred to ${newOwner}`);
+        setNewOwner("");
+      } catch (error) {
+        setOwnerError(true);
+        setTimeout(() => {
+          setOwnerError(false);
+        }, 5000);
+      }
+    }
+  };
+
+  const lockTokens = async () => {
+    if (atm) {
+      try {
+        const amountInWei = ethers.utils.parseUnits(lockAmount, 18); 
+        const tx = await atm.lockTokens(amountInWei);
+        await tx.wait();
+        alert(`Locked ${lockAmount} tokens`);
+        getBalance(); 
+      } catch (error) {
+        console.error("Error locking tokens:", error);
+      }
+    }
+  };
+
+  const unlockTokens = async () => {
+    if (atm) {
+      try {
+        const amountInWei = ethers.utils.parseUnits(lockAmount, 18); 
+        const tx = await atm.unlockTokens(amountInWei);
+        await tx.wait();
+        alert(`Unlocked ${lockAmount} tokens`);
+        getBalance(); 
+      } catch (error) {
+        console.error("Error unlocking tokens:", error);
+      }
     }
   };
 
   const deposit = async () => {
-    try {
-      if (atm && isValidTransactionAmount()) {
-        let tx = await atm.deposit(transactionAmount);
+    if (atm) {
+      try {
+        const amountInWei = ethers.utils.parseEther(depositAmount);
+        const tx = await atm.deposit(amountInWei, { value: amountInWei });
         await tx.wait();
+        alert(`Deposited ${depositAmount} ETH`);
         getBalance();
-      } else {
-          console.log('Invalid transaction amount or insufficient balance');
-        }
-     } catch (error) {
-      if (error.code === 'ACTION_REJECTED') {
-        console.log('User rejected the deposit transaction.');
-      } else {
-        console.error('Unhandled error:', error);
+        setDepositAmount("");
+      } catch (error) {
+        console.error("Error depositing:", error);
       }
     }
   };
-  
+
   const withdraw = async () => {
-    try {
-      if (atm && isValidTransactionAmount()) {
-        let tx = await atm.withdraw(transactionAmount);
+    if (atm) {
+      try {
+        const amountInWei = ethers.utils.parseEther(withdrawAmount);
+        const tx = await atm.withdraw(amountInWei);
         await tx.wait();
-        getBalance();
-      } else {
-          console.log('Invalid transaction amount or insufficient balance');
-      }
-    } catch (error) {
-      if (error.code === 'ACTION_REJECTED') {
-        console.log('User rejected the withdraw transaction.');
-      } else {
-        console.error('Unhandled error:', error);
+        alert(`Withdrew ${withdrawAmount} ETH`);
+        getBalance(); 
+        setWithdrawAmount("");
+      } catch (error) {
+        console.error("Error withdrawing:", error);
       }
     }
   };
-  
-  const burn = async () => {
-    try {
-      if (atm && isValidTransactionAmount()) {
-        let tx = await atm.burn(transactionAmount);
-        await tx.wait();
-        getBalance();
-      } else {
-          console.log('Invalid transaction amount or insufficient balance');
-      }
-    } catch (error) {
-      if (error.code === 'ACTION_REJECTED') {
-        console.log('User rejected the burn transaction.');
-      } else {
-        console.error('Unhandled error:', error);
-      }
+
+  const handleAccountsChanged = (accounts) => {
+    if (accounts.length === 0) {
+      console.log("Please connect to MetaMask.");
+    } else {
+      setAccount(accounts[0]);
     }
-  }; 
-
-
-  const inputStyle = {
-    padding: '8px',
-    margin: '10px',
-    borderRadius: '5px',
-    border: '1px solid #FFD700',
-    backgroundColor: '#0000',
-    color: '#fff',
-    fontSize: '16px',
-    outline: 'none',
-    maxWidth: '30px',
-    padding: '5px',
-  };
-
-  const inputStyle2 = {
-    padding: '8px',
-    margin: '10px',
-    borderRadius: '5px',
-    border: '1px solid #FFD700',
-    backgroundColor: '#0000',
-    color: '#fff',
-    fontSize: '16px',
-    outline: 'none',
-    maxWidth: '50x',
-    width: '90px',
-    padding: '5px',
-  };
-
-
-  // Styling with animations and background color
-  const containerStyle = {
-    textAlign: "center",
-    backgroundColor: "#10084F",
-    padding: "20px 10px 40px 10px",
-    borderRadius: "10px",
-    boxShadow: "0px 0px 10px rgba(0, 0, 0, 0.1)",
-    margin: "20px auto",
-    maxWidth: "500px",
-    animation: "fadeIn 1s ease-in-out",
-    font: "16px sans-serif",
-    transition: "background-color 0.3s ease-in-out",
-    color: "#ffffff",
-    borderRadius: "20px",
-    background: "linear-gradient(to right, #10090F, #1B116A)",
-  };
-  
-  const spanStyle = {
-    color: '#736b94',
-    fontSize: '22px',
-    fontWeight: 'bold',
-  };
-
-  const buttonStyle = {
-    backgroundColor: "transparent",
-    color: "#fff",
-    border: "none",
-    padding: "10px 20px",
-    borderRadius: "5px",
-    margin: "5px",
-    cursor: "pointer",
-    transition: "background-color 0.3s ease-in-out, transform 0.1s ease-in-out",
-    boxShadow: "0px 2px 4px rgba(0, 0, 0, 0.1)",
-    animation: "buttonFadeIn 0.5s ease-in-out",
-    backgroundImage: "linear-gradient(to right, #FFD700, #B8860B)", // Gold to Dark Gold gradient
-    borderRadius: "20px",
-    borderColor: "#FFD700",
-    fontWeight: "bold",
-    fontSize: "14px",
-    
-
-    // Hover effect to darken the gradient
-    "&:hover": {
-    backgroundImage: "linear-gradient(to right, #FFA500, #8B4513)", // Darken the gradient on hover
-  },
   };
 
   const initUser = () => {
     if (!ethWallet) {
-      return <p>Please install Metamask in order to make transactions.</p>
+      return <p>Please install MetaMask in order to use this Locker.</p>;
     }
 
     if (!account) {
-      return <button style={buttonStyle} onClick={connectAccount}>Connect your Metamask wallet</button>;
+      return <button onClick={connectAccount} className="btn-connect">Please connect your wallet</button>;
     }
 
     if (balance === undefined) {
       getBalance();
     }
-    //When the wallet is connected, show the balance and buttons
+
+    checkOwnership();
+
     return (
       <div>
-        <p style={{fontSize : "20px"}}>Your Balance: <span style= {spanStyle}>{balance}</span> <img src={ethLogo} alt="Ethereum Logo" style={{ width: '13px', height: '19px' }} /></p>
-        <div>
+        <p>Your Locker Account Address: {account}</p>
+        <p>Your Balance: {balance}</p>
+        <button
+          onClick={() => {
+            transferOwnership();
+          }}
+          className="btn-action"
+        >
+          Change Owner
+        </button>
         <input
-          type="number"
-          value={transactionAmount}
-          onChange={handleAmountChange}
-          placeholder="Enter amount" // Placeholder text
-          style={inputStyle}
+          type="text"
+          placeholder="New owner address"
+          value={newOwner}
+          onChange={(e) => setNewOwner(e.target.value)}
+          className="input-text"
         />
+        {ownerError && <p className="error">Error: Unable to change the Owner</p>}
+        {ownershipStatus ? (
+          <p>You are the owner of the contract.</p>
+        ) : (
+          <p>You are not the owner of the contract.</p>
+        )}
+        <button onClick={checkOwnership} className="btn-action">Check Ownership</button>
+
+        <div className="section">
+          <h3>Deposit</h3>
+          <input
+            type="text"
+            placeholder="Amount to deposit"
+            value={depositAmount}
+            onChange={(e) => setDepositAmount(e.target.value)}
+            className="input-text"
+          />
+          <button onClick={deposit} className="btn-action">Deposit</button>
         </div>
-        <div></div>
-        <button style={buttonStyle} onClick={deposit}>Deposit {transactionAmount} ETH</button>
-        <button style={buttonStyle} onClick={withdraw}>Withdraw {transactionAmount} ETH</button>
-        <button style={buttonStyle} onClick={burn}>Burn {transactionAmount} ETH</button>
+
+        <div className="section">
+          <h3>Withdraw</h3>
+          <input
+            type="text"
+            placeholder="Amount to withdraw"
+            value={withdrawAmount}
+            onChange={(e) => setWithdrawAmount(e.target.value)}
+            className="input-text"
+          />
+          <button onClick={withdraw} className="btn-action">Withdraw</button>
+        </div>
+
+        <div className="section">
+          <h3>Lock Tokens</h3>
+          <input
+            type="text"
+            placeholder="Amount to lock"
+            value={lockAmount}
+            onChange={(e) => setLockAmount(e.target.value)}
+            className="input-text"
+          />
+          <button onClick={lockTokens} className="btn-action">Lock Tokens</button>
+        </div>
+
+        <div className="section">
+          <h3>Unlock Tokens</h3>
+          <input
+            type="text"
+            placeholder="Amount to unlock"
+            value={lockAmount}
+            onChange={(e) => setLockAmount(e.target.value)}
+            className="input-text"
+          />
+          <button onClick={unlockTokens} className="btn-action">Unlock Tokens</button>
+        </div>
       </div>
     );
   };
 
-  useEffect(() => {
-    getWallet();
-  }, []);
-
   return (
-    <main style={containerStyle} className="container">
+    <main className="container">
       <header>
-        <h1 style={{ color: "#ffffff" }}>Welcome to ETH Manager!</h1>
+        <h1>Welcome to the Module 2 Locker Dapps!</h1>
       </header>
-      <div>
-        {account && (
-          <>
-            {showAccount ? (
-              <p style={{fontSize : "20px"}}>Your Account: <span style={{color : "#cacaca"}}>{account}</span></p>
-            ) : (
-              <p style={{fontSize : "20px"}}>Your Account: ************</p>
-            )}
-            <button onClick={toggleAccount}>
-              {showAccount ? "🙉" : "🙈"}
-            </button>
-          </>
-        )}
-        {initUser()}
-      </div>
+      {initUser()}
       <style jsx>{`
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-          }
-          to {
-            opacity: 1;
-          }
+        .container {
+          text-align: center;
+          font-family: Arial, sans-serif;
         }
-  
-        @keyframes buttonFadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+        .error {
+          color: red;
         }
-  
-        button {
-          background-color: transparent;
-          color: gold;
+        .btn-connect, .btn-action {
+          background-color: #6200ea;
+          color: white;
+          padding: 10px 20px;
           border: none;
-          padding: 10px;
-          margin: 5px;
+          border-radius: 5px;
           cursor: pointer;
-          transition: transform 0.2s ease-in-out;
-          animation: buttonFadeIn 0.5s ease-in-out;
-          border-radius: 20px;
+          margin-top: 10px;
         }
-  
-        button:hover {
-          background-color: #ffcd3c; /* Darken the color on hover */
-          transform: translateY(-2px);
+        .btn-connect:hover, .btn-action:hover {
+          background-color: #3700b3;
         }
-  
-        button:active {
-          transform: translateY(1px);
+        .input-text {
+          padding: 10px;
+          margin-top: 10px;
+          border: 1px solid #ccc;
+          border-radius: 5px;
+          width: calc(100% - 22px);
+          max-width: 300px;
+        }
+        .section {
+          margin: 20px 0;
+        }
+        header h1 {
+          color: #333;
         }
       `}</style>
     </main>
