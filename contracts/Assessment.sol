@@ -1,54 +1,70 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
+
 pragma solidity ^0.8.9;
 
 contract Assessment {
-   address payable public owner;
-   uint256 public balance;
-   
-   event Deposit(uint256 amount);
-   event Withdraw(uint256 amount);
-   event Burn(uint256 amount);
 
-   constructor(uint initBalance) payable {
-       owner = payable(msg.sender);
-       balance = initBalance;
-   }
+    address payable public owner;
+    uint256 public balance;
+    
+    mapping(address => uint256) public lockedTokens;
 
-   function getBalance() public view returns(uint256){
-       return balance;
-   }
+    event Deposit(uint256 amount);
+    event Withdraw(uint256 amount);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event TokensLocked(address indexed to, uint256 amount);
+    event TokensUnlocked(address indexed to, uint256 amount);
 
-   function deposit(uint256 _amount) public payable {
-       require(msg.sender == owner, "You are not the owner of this account");
+    constructor(uint256 initBalance) {
+        owner = payable(msg.sender);
+        balance = initBalance;
+    }
 
-       balance += _amount;
+    function getBalance() public view returns (uint256) {
+        return balance;
+    }
 
-       emit Deposit(_amount);
-   }
+    function deposit(uint256 _amount) public payable {
+        require(msg.sender == owner, "You are not the owner of this account");
+        balance += _amount;
+        emit Deposit(_amount);
+    }
 
-   error InsufficientBalance(uint256 balance, uint256 withdrawAmount);
+    error InsufficientBalance(uint256 balance, uint256 withdrawAmount);
 
-   function withdraw(uint256 _withdrawAmount) public {
-       require(msg.sender == owner, "You are not the owner of this account");
+    function withdraw(uint256 _withdrawAmount) public {
+        require(msg.sender == owner, "You are not the owner of this account");
+        if (balance < _withdrawAmount) {
+            revert InsufficientBalance({balance: balance, withdrawAmount: _withdrawAmount});
+        }
+        balance -= _withdrawAmount;
+        emit Withdraw(_withdrawAmount);
+    }
 
-       if (balance < _withdrawAmount) {
-           revert InsufficientBalance({
-               balance: balance,
-               withdrawAmount: _withdrawAmount
-           });
-       }
+    function isOwner(address _address) public view returns (bool) {
+        return _address == owner;
+    }
 
-       balance -= _withdrawAmount;
+    function transferOwnership(address payable _newOwner) public {
+    
+        require(msg.sender == owner, "You are not the owner of this account");
+        require(_newOwner != address(0), "Invalid new owner address");
+        address payable _previousOwner = owner;
+        owner = _newOwner;
+        emit OwnershipTransferred(_previousOwner, _newOwner);
+    }
 
-       emit Withdraw(_withdrawAmount);
-   }
+    function lockTokens(uint256 _amount) public {
+        require(balance >= _amount, "Insufficient balance to lock");
+        lockedTokens[msg.sender] += _amount;
+        balance -= _amount;
+        emit TokensLocked(msg.sender, _amount);
+    }
 
-   function burn(uint256 _burnAmount) public {
-       require(msg.sender == owner, "You are not the owner of this account");
-       require(_burnAmount <= balance, "Insufficient balance");
-
-       balance -= _burnAmount;
-
-       emit Burn(_burnAmount);
-   }
+    function unlockTokens(uint256 _amount) public {
+        require(lockedTokens[msg.sender] >= _amount, "Insufficient locked tokens to unlock");
+        lockedTokens[msg.sender] -= _amount;
+        balance += _amount;
+        emit TokensUnlocked(msg.sender, _amount);
+    }
 }
